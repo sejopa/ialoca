@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Ollama Local</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #121212; color: #e0e0e0; margin: 0; padding: 20px; display: flex; flex-direction: column; height: 85vh; }
+        .config { background: #1e1e1e; padding: 10px 15px; border-radius: 8px; margin-bottom: 10px; display: flex; gap: 10px; align-items: center; border: 1px solid #333; }
+        .config input { flex: 1; padding: 8px; border-radius: 4px; border: 1px solid #444; background: #2d2d2d; color: white; }
+        #chat { flex: 1; border: 1px solid #333; border-radius: 8px; padding: 15px; overflow-y: auto; background: #1e1e1e; margin-bottom: 15px; display: flex; flex-direction: column; gap: 10px; }
+        .message { padding: 10px 14px; border-radius: 6px; max-width: 80%; line-height: 1.4; word-break: break-word; }
+        .user { background: #005fb8; align-self: flex-end; color: white; }
+        .assistant { background: #2d2d2d; align-self: flex-start; border: 1px solid #444; }
+        .controls { display: flex; gap: 10px; }
+        input[type="text"], select, button { padding: 12px; border-radius: 6px; border: 1px solid #444; background: #2d2d2d; color: white; font-size: 16px; }
+        input[type="text"] { flex: 1; }
+        button { background: #0078d4; cursor: pointer; border: none; font-weight: bold; }
+        button:hover { background: #0086f0; }
+    </style>
+</head>
+<body>
+
+    <h2>Chat con Ollama Local</h2>
+    
+    <div class="config">
+        <label for="host">URL Ollama:</label>
+        <input type="text" id="host" value="http://localhost:11434">
+        <button onclick="cargarModelos()">Conectar</button>
+        <select id="model"><option value="">Conéctate primero</option></select>
+    </div>
+
+    <div id="chat"></div>
+
+    <div class="controls">
+        <input type="text" id="prompt" placeholder="Escribe tu mensaje aquí..." onkeypress="if(event.key === 'Enter') enviar()">
+        <button onclick="enviar()">Enviar</button>
+    </div>
+
+    <script>
+        // Cargar IP guardada si existe
+        window.onload = () => {
+            const savedHost = localStorage.getItem('ollama_host');
+            if (savedHost) document.getElementById('host').value = savedHost;
+            cargarModelos();
+        };
+
+        async function cargarModelos() {
+            const host = document.getElementById('host').value.trim().replace(/\/$/, '');
+            localStorage.setItem('ollama_host', host);
+            const select = document.getElementById('model');
+            
+            try {
+                const res = await fetch(`${host}/api/tags`);
+                if (!res.ok) throw new Error('Respuesta no válida');
+                const data = await res.json();
+                
+                select.innerHTML = '';
+                if(!data.models || data.models.length === 0) {
+                    select.innerHTML = '<option>No hay modelos descargados</option>';
+                    return;
+                }
+                
+                data.models.forEach(m => {
+                    let opt = document.createElement('option');
+                    opt.value = m.name;
+                    opt.textContent = m.name;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                select.innerHTML = '<option>Error de conexión</option>';
+                alert(`No se pudo conectar a Ollama en (${host}).\n\nAsegúrate de haber arrancado Ollama con:\nset OLLAMA_HOST=0.0.0.0\nset OLLAMA_ORIGINS=*`);
+            }
+        }
+
+        async function enviar() {
+            const host = document.getElementById('host').value.trim().replace(/\/$/, '');
+            const input = document.getElementById('prompt');
+            const chat = document.getElementById('chat');
+            const model = document.getElementById('model').value;
+            const texto = input.value.trim();
+            
+            if (!texto || !model || model.includes('Error') || model.includes('Conéctate')) return;
+
+            chat.innerHTML += `<div class="message user">${escapeHtml(texto)}</div>`;
+            input.value = '';
+            chat.scrollTop = chat.scrollHeight;
+
+            const divAsistente = document.createElement('div');
+            divAsistente.className = 'message assistant';
+            divAsistente.textContent = 'Pensando...';
+            chat.appendChild(divAsistente);
+            chat.scrollTop = chat.scrollHeight;
+
+            try {
+                const response = await fetch(`${host}/api/generate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: model, prompt: texto, stream: false })
+                });
+                const data = await response.json();
+                divAsistente.textContent = data.response;
+            } catch (e) {
+                divAsistente.textContent = 'Error al generar la respuesta.';
+            }
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+    </script>
+</body>
+</html>
